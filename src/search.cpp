@@ -474,7 +474,7 @@ void Thread::search() {
           double bestMoveInstability = 1 + 1.7 * totBestMoveChanges / Threads.size();
           int complexity = mainThread->complexityAverage.value();
           double complexPosition = std::min(1.0 + (complexity - 261) / 1738.7, 1.5);
-          double fullTT = TT.hashfull() > 850 ? 0.5 : 1.0;
+          double fullTT = TT.hashfull() > 850 ? 0.75 : 1.0;
 
           double totalTime = Time.optimum() * fallingEval * reduction * bestMoveInstability * complexPosition * fullTT;
 
