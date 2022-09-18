@@ -152,11 +152,11 @@ TTEntry* TranspositionTable::probe(const Key key, bool& found) const {
 int TranspositionTable::hashfull() const {
 
   int cnt = 0;
-  for (int i = 0; i < 1000; ++i)
-      for (int j = 0; j < ClusterSize; ++j)
+  for (size_t i = 0, n = 0; i < clusterCount && n < 1000; ++i)
+      for (int j = 0; j < ClusterSize && n < 1000; ++j, ++n)
           cnt += table[i].entry[j].depth8 && (table[i].entry[j].genBound8 & GENERATION_MASK) == generation8;
 
-  return cnt / ClusterSize;
+  return cnt;
 }
 
 } // namespace Stockfish
