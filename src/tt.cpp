@@ -36,16 +36,16 @@ void TTEntry::save(
   Key k, Value v, bool pv, Bound b, Depth d, Move m, Value ev, uint8_t generation8) {
 
     // Preserve any existing move for the same position
-    if (m || uint16_t(k) != key16)
+    if (m || uint64_t(k) != key64)
         move16 = m;
 
     // Overwrite less valuable entries (cheapest checks first)
-    if (b == BOUND_EXACT || uint16_t(k) != key16 || d - DEPTH_OFFSET + 2 * pv > depth8 - 4)
+    if (b == BOUND_EXACT || uint64_t(k) != key64 || d - DEPTH_OFFSET + 2 * pv > depth8 - 4)
     {
         assert(d > DEPTH_OFFSET);
         assert(d < 256 + DEPTH_OFFSET);
 
-        key16     = uint16_t(k);
+        key64     = uint64_t(k);
         depth8    = uint8_t(d - DEPTH_OFFSET);
         genBound8 = uint8_t(generation8 | uint8_t(pv) << 2 | b);
         value16   = int16_t(v);
@@ -119,10 +119,10 @@ void TranspositionTable::clear(size_t threadCount) {
 TTEntry* TranspositionTable::probe(const Key key, bool& found) const {
 
     TTEntry* const tte   = first_entry(key);
-    const uint16_t key16 = uint16_t(key);  // Use the low 16 bits as key inside the cluster
+    const uint64_t key64 = uint64_t(key);  // Use the low 16 bits as key inside the cluster
 
     for (int i = 0; i < ClusterSize; ++i)
-        if (tte[i].key16 == key16 || !tte[i].depth8)
+        if (tte[i].key64 == key64 || !tte[i].depth8)
         {
             constexpr uint8_t lowerBits = GENERATION_DELTA - 1;
 
