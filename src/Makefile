@@ -601,6 +601,16 @@ ifeq ($(wildcard $(LLVM_PROFDATA)),)
 	LLVM_PROFDATA := llvm-profdata
 endif
 
+# BOLT tool location
+LLVM_BOLT := $(dir $(realpath $(shell which $(CXX) 2> /dev/null)))llvm-bolt
+ifeq ($(wildcard $(LLVM_BOLT)),)
+	LLVM_BOLT := llvm-bolt
+endif
+PERF2BOLT := $(dir $(realpath $(shell which $(CXX) 2> /dev/null)))perf2bolt
+ifeq ($(wildcard $(PERF2BOLT)),)
+	PERF2BOLT := perf2bolt
+endif
+
 ifeq ($(comp),icx)
 	profile_make = icx-profile-make
 	profile_use = icx-profile-use
@@ -1001,6 +1011,47 @@ profile-build: net config-sanity objclean profileclean
 	@echo "Step 4/4. Deleting profile data ..."
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) profileclean
 
+bolt-profile-build: net config-sanity objclean profileclean
+	@echo ""
+	@echo "=== Phase 1: PGO ==="
+	@echo "Step 1/8. Building instrumented executable for PGO ..."
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) $(profile_make)
+	@echo ""
+	@echo "Step 2/8. Running benchmark for PGO ..."
+	$(PGOBENCH) > PGOBENCH.out 2>&1
+	tail -n 4 PGOBENCH.out
+	@echo ""
+	@echo "Step 3/8. Building PGO-optimized executable ..."
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) objclean
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) $(clang-bolt-profile-use)
+	@echo ""
+	@echo "=== Phase 2: BOLT ==="
+	@echo "Step 4/8. Running benchmark with perf profiling ..."
+	perf record -e cycles:u -j any,u -o perf.data -- $(WINE_PATH) ./$(EXE) bench 16 1 20 > BOLTBENCH.out 2>&1
+	tail -n 4 BOLTBENCH.out
+	@echo ""
+	@echo "Step 5/8. Converting perf data to BOLT format ..."
+	perf2bolt -p perf.data -o $(EXE).fdata $(EXE)
+	@echo ""
+	@echo "Step 6/8. Optimizing with BOLT ..."
+	$(LLVM_BOLT) $(EXE) -o $(EXE).bolted \
+		-data=$(EXE).fdata \
+		-reorder-blocks=ext-tsp \
+		-reorder-functions=cdsort \
+		-split-functions \
+		-split-all-cold \
+		-split-eh \
+		-dyno-stats
+	@mv $(EXE).bolted $(EXE)
+	@echo ""
+	@echo "Step 7/8. Deleting PGO profile data ..."
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) profileclean
+	@echo ""
+	@echo "Step 8/8. Cleaning up BOLT artifacts ..."
+	@rm -f $(EXE).fdata perf.data perf.data.old BOLTBENCH.out
+	@echo ""
+	@echo "PGO+BOLT optimization complete!"
+
 strip:
 	$(STRIP) $(EXE)
 
@@ -1026,6 +1077,8 @@ profileclean:
 	@rm -f stockfish.*lt*
 	@rm -f stockfish.res
 	@rm -f ./-lstdc++.res
+	@rm -f $(EXE).instrumented $(EXE).bolted $(EXE).fdata* BOLTBENCH.out
+	@rm -f perf.data perf.data.old
 
 # evaluation network (nnue)
 net:
@@ -1126,6 +1179,13 @@ clang-profile-use:
 	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
 	EXTRACXXFLAGS='-fprofile-use=stockfish.profdata' \
 	EXTRALDFLAGS='-fprofile-use ' \
+	all
+
+clang-bolt-profile-use:
+	$(XCRUN) $(LLVM_PROFDATA) merge -output=stockfish.profdata *.profraw
+	$(MAKE) ARCH=$(ARCH) COMP=$(COMP) \
+	EXTRACXXFLAGS='-fprofile-use=stockfish.profdata' \
+	EXTRALDFLAGS='-fprofile-use -Wl,--emit-relocs ' \
 	all
 
 gcc-profile-make:
